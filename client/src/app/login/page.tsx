@@ -18,7 +18,11 @@ export default function LoginPage() {
     // Simulate login
     // In the future: const { error } = await supabase.auth.signInWithPassword({ email, password })
     
-    const profile = localStorage.getItem('sa_profile');
+    // Set active user session
+    localStorage.setItem('sa_user', email);
+
+    // Check if this specific user has completed onboarding
+    const profile = localStorage.getItem(`sa_profile_${email}`);
     if (profile) {
       router.push('/');
     } else {

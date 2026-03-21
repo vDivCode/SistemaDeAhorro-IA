@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,9 +19,13 @@ export default function OnboardingPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate saving profile data
     // In the future: await supabase.from('profiles').insert([formData])
-    localStorage.setItem('sa_profile', JSON.stringify(formData));
+    
+    const userEmail = localStorage.getItem('sa_user');
+    if (userEmail) {
+      localStorage.setItem(`sa_profile_${userEmail}`, JSON.stringify(formData));
+    }
+    
     router.push('/'); // Go to dashboard
   };
 

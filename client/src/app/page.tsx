@@ -40,26 +40,34 @@ export default function Dashboard() {
 
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
   const [isMounted, setIsMounted] = useState(false);
 
   // Example simple persistence with localStorage until Supabase is hooked up fully
   useEffect(() => {
     setIsMounted(true);
-    const savedProfile = localStorage.getItem('sa_profile');
-    if (!savedProfile) {
+    const email = localStorage.getItem('sa_user');
+    
+    if (!email) {
       router.push('/login');
+      return;
+    }
+    setUserEmail(email);
+
+    const savedProfile = localStorage.getItem(`sa_profile_${email}`);
+    if (!savedProfile) {
+      router.push('/onboarding');
       return;
     }
     setProfile(JSON.parse(savedProfile));
 
-    const savedSueldo = localStorage.getItem('sa_sueldo');
-    const savedMovs = localStorage.getItem('sa_movimientos');
+    const savedSueldo = localStorage.getItem(`sa_sueldo_${email}`);
+    const savedMovs = localStorage.getItem(`sa_movimientos_${email}`);
     if (savedSueldo) setSueldo(Number(savedSueldo));
     if (savedMovs) setMovimientos(JSON.parse(savedMovs));
   }, [router]);
 
   const handleLogout = () => {
-    localStorage.removeItem('sa_profile');
     localStorage.removeItem('sa_user');
     router.push('/login');
   };
@@ -72,7 +80,7 @@ export default function Dashboard() {
     const val = Number(sueldoInput);
     if (!isNaN(val) && val >= 0) {
       setSueldo(val);
-      localStorage.setItem('sa_sueldo', val.toString());
+      localStorage.setItem(`sa_sueldo_${userEmail}`, val.toString());
       setIsSueldoOpen(false);
       setSueldoInput('');
     }
@@ -91,7 +99,7 @@ export default function Dashboard() {
       };
       const updated = [newMov, ...movimientos];
       setMovimientos(updated);
-      localStorage.setItem('sa_movimientos', JSON.stringify(updated));
+      localStorage.setItem(`sa_movimientos_${userEmail}`, JSON.stringify(updated));
       setIsMovOpen(false);
       setMovInput({ desc: '', amount: '', type: 'expense', cat: 'General' });
     }
