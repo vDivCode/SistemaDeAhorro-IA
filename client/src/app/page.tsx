@@ -8,8 +8,10 @@ import {
   Lightbulb,
   TrendingUp,
   History,
-  Settings
+  Settings,
+  LogOut
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -36,13 +38,35 @@ export default function Dashboard() {
   const [isMovOpen, setIsMovOpen] = useState(false);
   const [movInput, setMovInput] = useState({ desc: '', amount: '', type: 'expense', cat: 'General' });
 
+  const router = useRouter();
+  const [profile, setProfile] = useState<any>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
   // Example simple persistence with localStorage until Supabase is hooked up fully
   useEffect(() => {
+    setIsMounted(true);
+    const savedProfile = localStorage.getItem('sa_profile');
+    if (!savedProfile) {
+      router.push('/login');
+      return;
+    }
+    setProfile(JSON.parse(savedProfile));
+
     const savedSueldo = localStorage.getItem('sa_sueldo');
     const savedMovs = localStorage.getItem('sa_movimientos');
     if (savedSueldo) setSueldo(Number(savedSueldo));
     if (savedMovs) setMovimientos(JSON.parse(savedMovs));
-  }, []);
+  }, [router]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('sa_profile');
+    localStorage.removeItem('sa_user');
+    router.push('/login');
+  };
+
+  if (!isMounted || !profile) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Cargando...</div>;
+  }
 
   const saveSueldo = () => {
     const val = Number(sueldoInput);
@@ -88,10 +112,15 @@ export default function Dashboard() {
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Hola, David</h1>
-            <p className="text-slate-500">Aquí tienes el resumen de tu salud financiera hoy.</p>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Hola, {profile.nombre.split(' ')[0]}</h1>
+            <p className="text-slate-500">
+              Aquí tienes el resumen de tu salud financiera hoy como <span className="text-slate-700 font-medium">{profile.trabajo}</span>.
+            </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 items-center">
+            <Button variant="ghost" className="text-slate-500 hover:text-slate-900" onClick={handleLogout}>
+              <LogOut className="w-4 h-4 mr-2" /> Salir
+            </Button>
             <Dialog open={isSueldoOpen} onOpenChange={setIsSueldoOpen}>
               <DialogTrigger render={
                 <Button variant="outline" className="gap-2 border-slate-300" />
@@ -251,6 +280,9 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <>
+                  <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-900 text-sm leading-relaxed">
+                    <strong>🎯 Tu Meta Principal:</strong> Para lograr <strong>"{profile.meta}"</strong> intenta mantener un ahorro del 20% mensual en base a tu edad actual de {profile.edad} años. La IA optimizará este porcentaje según tus futuros ingresos.
+                  </div>
                   <div className="p-4 rounded-lg bg-amber-50 border border-amber-100 text-amber-900 text-sm leading-relaxed">
                     <strong>💡 Tip General:</strong> Tienes {movimientos.filter(m => m.type === 'expense').length} gastos registrados. La IA está aprendiendo de tus patrones para darte recomendaciones exactas.
                   </div>
