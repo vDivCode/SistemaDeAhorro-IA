@@ -7,26 +7,39 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Wallet } from 'lucide-react';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate login
-    // In the future: const { error } = await supabase.auth.signInWithPassword({ email, password })
     
-    // Set active user session
-    localStorage.setItem('sa_user', email);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    // Check if this specific user has completed onboarding
-    const profile = localStorage.getItem(`sa_profile_${email}`);
-    if (profile) {
-      router.push('/');
-    } else {
-      router.push('/onboarding');
+    if (error) {
+      alert("Error al iniciar sesión: " + error.message);
+      return;
+    }
+
+    if (data?.user) {
+      // Check if this specific user has completed onboarding by checking profiles table
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', data.user.id)
+        .single();
+
+      if (profile && profile.full_name) {
+        router.push('/');
+      } else {
+        router.push('/onboarding');
+      }
     }
   };
 

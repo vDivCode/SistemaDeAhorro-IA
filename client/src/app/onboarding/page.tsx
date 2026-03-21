@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UserCircle, Target, Briefcase, GraduationCap, Calendar } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -17,16 +18,44 @@ export default function OnboardingPage() {
     meta: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In the future: await supabase.from('profiles').insert([formData])
     
-    const userEmail = localStorage.getItem('sa_user');
-    if (userEmail) {
-      localStorage.setItem(`sa_profile_${userEmail}`, JSON.stringify(formData));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert("No se encontró usuario activo.");
+      return;
+    }
+
+    // Guardar datos adicionales en la metadata del usuario de Auth
+    await supabase.auth.updateUser({
+      data: {
+        trabajo: formData.trabajo,
+        estudios: formData.estudios,
+        edad: formData.edad
+      }
+    });
+
+    // Guardar en tabla profiles
+    const { error: profileError } = await supabase.from('profiles').upsert({
+      id: user.id,
+      full_name: formData.nombre,
+    });
+
+    if (profileError) {
+      console.error("Error al guardar perfil:", profileError);
+    }
+
+    // Insertar meta inicial en savings_goals
+    if (formData.meta) {
+      await supabase.from('savings_goals').insert({
+        user_id: user.id,
+        title: formData.meta,
+        target_amount: 1000 // Monto temporal que luego se ajusta
+      });
     }
     
-    router.push('/'); // Go to dashboard
+    router.push('/'); // Ir al dashboard
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

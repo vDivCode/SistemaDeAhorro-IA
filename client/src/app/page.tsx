@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from '@/lib/supabase';
 
 type Movement = {
   id: string;
@@ -40,35 +42,75 @@ export default function Dashboard() {
 
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
-  const [userEmail, setUserEmail] = useState<string>('');
+  const [userId, setUserId] = useState<string>('');
   const [isMounted, setIsMounted] = useState(false);
 
-  // Example simple persistence with localStorage until Supabase is hooked up fully
+  // Load from Supabase
   useEffect(() => {
     setIsMounted(true);
-    const email = localStorage.getItem('sa_user');
     
-    if (!email) {
-      router.push('/login');
-      return;
-    }
-    setUserEmail(email);
+    const loadData = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+      
+      const user = session.user;
+      setUserId(user.id);
 
-    const savedProfile = localStorage.getItem(`sa_profile_${email}`);
-    if (!savedProfile) {
-      router.push('/onboarding');
-      return;
-    }
-    setProfile(JSON.parse(savedProfile));
+      // 1. Cargar Perfil
+      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      
+      if (!profileData) {
+        router.push('/onboarding');
+        return;
+      }
 
-    const savedSueldo = localStorage.getItem(`sa_sueldo_${email}`);
-    const savedMovs = localStorage.getItem(`sa_movimientos_${email}`);
-    if (savedSueldo) setSueldo(Number(savedSueldo));
-    if (savedMovs) setMovimientos(JSON.parse(savedMovs));
+      // 2. Cargar Meta de Ahorro
+      const { data: goalData } = await supabase.from('savings_goals').select('title').eq('user_id', user.id).limit(1).single();
+
+      const metaData = user.user_metadata || {};
+      
+      setProfile({
+        nombre: profileData.full_name || 'Usuario',
+        trabajo: metaData.trabajo || 'Desconocido',
+        edad: metaData.edad || '?',
+        meta: goalData?.title || 'Sin meta definida',
+        currency: profileData.currency || 'SOL'
+      });
+
+      // 3. Cargar Sueldo Fijo
+      setSueldo(Number(profileData.monthly_income_target) || 0);
+
+      // 4. Cargar Transacciones
+      const { data: txs } = await supabase.from('transactions')
+        .select(`
+          id, amount, description, date,
+          categories(name, type)
+        `)
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
+
+      if (txs) {
+        const mapped: Movement[] = txs.map((tx: any) => ({
+          id: tx.id,
+          desc: tx.description,
+          cat: tx.categories?.name || 'General',
+          amount: Math.abs(Number(tx.amount)), // Guardamos absoluto para UI
+          type: tx.categories?.type || (Number(tx.amount) < 0 ? 'expense' : 'income'),
+          date: new Date(tx.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })
+        }));
+        setMovimientos(mapped);
+      }
+    };
+
+    loadData();
   }, [router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('sa_user');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     router.push('/login');
   };
 
@@ -76,32 +118,54 @@ export default function Dashboard() {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Cargando...</div>;
   }
 
-  const saveSueldo = () => {
+  const saveSueldo = async () => {
     const val = Number(sueldoInput);
     if (!isNaN(val) && val >= 0) {
+      await supabase.from('profiles').update({ monthly_income_target: val }).eq('id', userId);
       setSueldo(val);
-      localStorage.setItem(`sa_sueldo_${userEmail}`, val.toString());
       setIsSueldoOpen(false);
       setSueldoInput('');
     }
   };
 
-  const saveMovimiento = () => {
+  const saveMovimiento = async () => {
     const val = Number(movInput.amount);
     if (movInput.desc && !isNaN(val) && val > 0) {
-      const newMov: Movement = {
-        id: Math.random().toString(36).substr(2, 9),
-        desc: movInput.desc,
-        amount: val,
-        type: movInput.type as 'income' | 'expense',
-        cat: movInput.cat,
-        date: new Date().toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })
-      };
-      const updated = [newMov, ...movimientos];
-      setMovimientos(updated);
-      localStorage.setItem(`sa_movimientos_${userEmail}`, JSON.stringify(updated));
-      setIsMovOpen(false);
-      setMovInput({ desc: '', amount: '', type: 'expense', cat: 'General' });
+      
+      // 1. Buscar o crear la categoria
+      let { data: catData } = await supabase.from('categories')
+        .select('id').eq('name', movInput.cat).eq('type', movInput.type).limit(1).single();
+      
+      if (!catData) {
+        const { data: newCat } = await supabase.from('categories')
+          .insert({ name: movInput.cat, type: movInput.type, user_id: userId })
+          .select('id').single();
+        catData = newCat;
+      }
+
+      // 2. Insertar transaccion (Firmada: Positivo para ingreso, Negativo para gasto)
+      const signedVal = movInput.type === 'expense' ? -val : val;
+
+      const { data: newTx } = await supabase.from('transactions').insert({
+        user_id: userId,
+        category_id: catData?.id,
+        amount: signedVal,
+        description: movInput.desc
+      }).select('id, date').single();
+
+      if (newTx) {
+        const newMov: Movement = {
+          id: newTx.id,
+          desc: movInput.desc,
+          amount: val, // UI necesita valor absoluto
+          type: movInput.type as 'income' | 'expense',
+          cat: movInput.cat,
+          date: new Date(newTx.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })
+        };
+        setMovimientos([newMov, ...movimientos]);
+        setIsMovOpen(false);
+        setMovInput({ desc: '', amount: '', type: 'expense', cat: 'General' });
+      }
     }
   };
 
@@ -130,9 +194,7 @@ export default function Dashboard() {
               <LogOut className="w-4 h-4 mr-2" /> Salir
             </Button>
             <Dialog open={isSueldoOpen} onOpenChange={setIsSueldoOpen}>
-              <DialogTrigger render={
-                <Button variant="outline" className="gap-2 border-slate-300" />
-              }>
+              <DialogTrigger render={<Button variant="outline" className="gap-2 border-slate-300" />}>
                 <Settings className="w-4 h-4 text-slate-600" />
                 {sueldo > 0 ? 'Editar Sueldo' : 'Ingresar Sueldo'}
               </DialogTrigger>
@@ -158,9 +220,7 @@ export default function Dashboard() {
             </Dialog>
 
             <Dialog open={isMovOpen} onOpenChange={setIsMovOpen}>
-              <DialogTrigger render={
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" />
-              }>
+              <DialogTrigger render={<Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" />}>
                 <PlusCircle className="w-4 h-4" />
                 Nuevo Movimiento
               </DialogTrigger>
@@ -171,14 +231,18 @@ export default function Dashboard() {
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
                     <Label>Tipo</Label>
-                    <select 
-                      className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
-                      value={movInput.type}
-                      onChange={(e) => setMovInput({...movInput, type: e.target.value as any})}
+                    <Select 
+                      value={movInput.type} 
+                      onValueChange={(val) => setMovInput({...movInput, type: val as any})}
                     >
-                      <option value="expense">Gasto</option>
-                      <option value="income">Ingreso Extra</option>
-                    </select>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecciona..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="expense">Gasto</SelectItem>
+                        <SelectItem value="income">Ingreso Extra</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Descripción</Label>
