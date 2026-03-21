@@ -1,4 +1,5 @@
 'use client';
+import { useState, useEffect } from 'react';
 import { 
   PlusCircle, 
   ArrowUpCircle, 
@@ -6,12 +7,80 @@ import {
   Wallet, 
   Lightbulb,
   TrendingUp,
-  History
+  History,
+  Settings
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+type Movement = {
+  id: string;
+  desc: string;
+  cat: string;
+  amount: number;
+  date: string;
+  type: 'income' | 'expense';
+};
 
 export default function Dashboard() {
+  const [sueldo, setSueldo] = useState<number>(0);
+  const [movimientos, setMovimientos] = useState<Movement[]>([]);
+  
+  // Modals state
+  const [isSueldoOpen, setIsSueldoOpen] = useState(false);
+  const [sueldoInput, setSueldoInput] = useState('');
+  
+  const [isMovOpen, setIsMovOpen] = useState(false);
+  const [movInput, setMovInput] = useState({ desc: '', amount: '', type: 'expense', cat: 'General' });
+
+  // Example simple persistence with localStorage until Supabase is hooked up fully
+  useEffect(() => {
+    const savedSueldo = localStorage.getItem('sa_sueldo');
+    const savedMovs = localStorage.getItem('sa_movimientos');
+    if (savedSueldo) setSueldo(Number(savedSueldo));
+    if (savedMovs) setMovimientos(JSON.parse(savedMovs));
+  }, []);
+
+  const saveSueldo = () => {
+    const val = Number(sueldoInput);
+    if (!isNaN(val) && val >= 0) {
+      setSueldo(val);
+      localStorage.setItem('sa_sueldo', val.toString());
+      setIsSueldoOpen(false);
+      setSueldoInput('');
+    }
+  };
+
+  const saveMovimiento = () => {
+    const val = Number(movInput.amount);
+    if (movInput.desc && !isNaN(val) && val > 0) {
+      const newMov: Movement = {
+        id: Math.random().toString(36).substr(2, 9),
+        desc: movInput.desc,
+        amount: val,
+        type: movInput.type as 'income' | 'expense',
+        cat: movInput.cat,
+        date: new Date().toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })
+      };
+      const updated = [newMov, ...movimientos];
+      setMovimientos(updated);
+      localStorage.setItem('sa_movimientos', JSON.stringify(updated));
+      setIsMovOpen(false);
+      setMovInput({ desc: '', amount: '', type: 'expense', cat: 'General' });
+    }
+  };
+
+  // Calculations
+  const totalIngresosExtras = movimientos.filter(m => m.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
+  const ingresosTotales = sueldo + totalIngresosExtras;
+  const totalGastos = movimientos.filter(m => m.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
+  const saldoTotal = ingresosTotales - totalGastos;
+  
+  const formatter = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' });
+
   return (
     <div className="min-h-screen bg-slate-50/50 p-6 md:p-10 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -22,15 +91,89 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">Hola, David</h1>
             <p className="text-slate-500">Aquí tienes el resumen de tu salud financiera hoy.</p>
           </div>
-          <div className="flex gap-3">
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-              <PlusCircle className="w-4 h-4" />
-              Nuevo Gasto
-            </Button>
-            <Button variant="outline" className="gap-2 border-slate-200">
-              <Lightbulb className="w-4 h-4 text-amber-500" />
-              Need Insight
-            </Button>
+          <div className="flex flex-wrap gap-3">
+            <Dialog open={isSueldoOpen} onOpenChange={setIsSueldoOpen}>
+              <DialogTrigger render={
+                <Button variant="outline" className="gap-2 border-slate-300" />
+              }>
+                <Settings className="w-4 h-4 text-slate-600" />
+                {sueldo > 0 ? 'Editar Sueldo' : 'Ingresar Sueldo'}
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Configurar Sueldo Mensual</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Sueldo (S/)</Label>
+                    <Input 
+                      type="number" 
+                      placeholder="Ej. 3500" 
+                      value={sueldoInput}
+                      onChange={(e) => setSueldoInput(e.target.value)}
+                    />
+                  </div>
+                  <Button onClick={saveSueldo} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+                    Guardar Sueldo
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isMovOpen} onOpenChange={setIsMovOpen}>
+              <DialogTrigger render={
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" />
+              }>
+                <PlusCircle className="w-4 h-4" />
+                Nuevo Movimiento
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Registrar Nuevo Movimiento</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Tipo</Label>
+                    <select 
+                      className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
+                      value={movInput.type}
+                      onChange={(e) => setMovInput({...movInput, type: e.target.value as any})}
+                    >
+                      <option value="expense">Gasto</option>
+                      <option value="income">Ingreso Extra</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Descripción</Label>
+                    <Input 
+                      placeholder="Ej. Compra supermercado" 
+                      value={movInput.desc}
+                      onChange={(e) => setMovInput({...movInput, desc: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Categoría</Label>
+                    <Input 
+                      placeholder="Ej. Alimentación" 
+                      value={movInput.cat}
+                      onChange={(e) => setMovInput({...movInput, cat: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Monto (S/)</Label>
+                    <Input 
+                      type="number" 
+                      placeholder="Ej. 150" 
+                      value={movInput.amount}
+                      onChange={(e) => setMovInput({...movInput, amount: e.target.value})}
+                    />
+                  </div>
+                  <Button onClick={saveMovimiento} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+                    Registrar
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -38,48 +181,53 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card className="border-none shadow-sm bg-white border-slate-100">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Saldo Total</CardTitle>
+              <CardTitle className="text-sm font-medium text-slate-500">Total Disponible</CardTitle>
               <Wallet className="h-4 w-4 text-slate-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-900">S/ 4,250.00</div>
-              <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-1">
-                <TrendingUp className="w-3 h-3" />
-                +12% desde el mes pasado
+              <div className={`text-2xl font-bold ${saldoTotal >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                {formatter.format(saldoTotal)}
+              </div>
+              <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-1">
+                Basado en tu sueldo y movimientos
               </p>
             </CardContent>
           </Card>
 
           <Card className="border-none shadow-sm bg-white border-slate-100">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Ingresos (Mar)</CardTitle>
+              <CardTitle className="text-sm font-medium text-slate-500">Ingresos Totales</CardTitle>
               <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-900">S/ 2,800.00</div>
-              <p className="text-xs text-slate-400 mt-1">Meta mensual: S/ 3,000</p>
+              <div className="text-2xl font-bold text-slate-900">{formatter.format(ingresosTotales)}</div>
+              <p className="text-xs text-slate-400 mt-1">Sueldo: {formatter.format(sueldo)}</p>
             </CardContent>
           </Card>
 
           <Card className="border-none shadow-sm bg-white border-slate-100">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Gastos (Mar)</CardTitle>
+              <CardTitle className="text-sm font-medium text-slate-500">Gastos Realizados</CardTitle>
               <ArrowDownCircle className="h-4 w-4 text-rose-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-900">S/ 1,240.00</div>
-              <p className="text-xs text-rose-500 font-medium mt-1">62% de tu presupuesto</p>
+              <div className="text-2xl font-bold text-slate-900">{formatter.format(totalGastos)}</div>
+              {sueldo > 0 && (
+                <p className="text-xs mt-1 text-slate-500">Equivale al {Math.round((totalGastos / sueldo) * 100)}% de tu sueldo base</p>
+              )}
             </CardContent>
           </Card>
 
           <Card className="border-none shadow-sm bg-emerald-50 border-emerald-100">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-emerald-800">Ahorro Neto</CardTitle>
-              <PlusCircle className="h-4 w-4 text-emerald-600" />
+              <CardTitle className="text-sm font-medium text-emerald-800">Estado de Ahorro</CardTitle>
+              <TrendingUp className="h-4 w-4 text-emerald-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-emerald-900">S/ 1,560.00</div>
-              <p className="text-xs text-emerald-700 font-medium mt-1">¡Buen trabajo este mes!</p>
+              <div className="text-2xl font-bold text-emerald-900">
+                {sueldo > 0 ? `${Math.max(0, 100 - Math.round((totalGastos / ingresosTotales) * 100))}%` : '0%'}
+              </div>
+              <p className="text-xs text-emerald-700 font-medium mt-1">Tasa de ahorro actual</p>
             </CardContent>
           </Card>
         </div>
@@ -94,18 +242,25 @@ export default function Dashboard() {
                 <Lightbulb className="w-5 h-5 text-amber-400" />
                 Predicción de la IA (Need)
               </CardTitle>
-              <CardDescription className="text-slate-400">Análisis basado en tus últimos 3 meses</CardDescription>
+              <CardDescription className="text-slate-400">Análisis basado en tus movimientos reales</CardDescription>
             </CardHeader>
             <CardContent className="pt-6 space-y-4 bg-white">
-              <div className="p-4 rounded-lg bg-amber-50 border border-amber-100 text-amber-900 text-sm leading-relaxed">
-                <strong>💡 Tip de Ahorro:</strong> Hemos detectado que tus gastos en "Comida Delivery" aumentan un 40% los fines de semana. Si reduces solo un pedido por semana, podrías completar tu meta de <strong>"Laptop 2030"</strong> 15 días antes de lo previsto.
-              </div>
-              <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-900 text-sm leading-relaxed">
-                <strong>📈 Oportunidad:</strong> Al ritmo actual de ahorro, en Mayo tendrás el fondo de emergencia completo (3 meses de gastos).
-              </div>
-              <Button variant="outline" className="w-full text-slate-600 border-slate-200">
-                Ver análisis detallado
-              </Button>
+              {movimientos.length === 0 ? (
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-100 text-slate-600 text-sm text-center">
+                  Comienza a registrar tus gastos para recibir consejos personalizados de la IA.
+                </div>
+              ) : (
+                <>
+                  <div className="p-4 rounded-lg bg-amber-50 border border-amber-100 text-amber-900 text-sm leading-relaxed">
+                    <strong>💡 Tip General:</strong> Tienes {movimientos.filter(m => m.type === 'expense').length} gastos registrados. La IA está aprendiendo de tus patrones para darte recomendaciones exactas.
+                  </div>
+                  {sueldo > 0 && totalGastos > sueldo * 0.8 && (
+                    <div className="p-4 rounded-lg bg-rose-50 border border-rose-100 text-rose-900 text-sm leading-relaxed">
+                      <strong>⚠️ Atención:</strong> Has gastado más del 80% de tu sueldo base. Intenta reducir gastos no esenciales este mes.
+                    </div>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -119,29 +274,25 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {[
-                  { desc: 'Supermercado Plaza Vea', cat: 'Alimentación', amount: '- S/ 150.00', date: 'Hoy' },
-                  { desc: 'Pago de Freelance', cat: 'Ingresos', amount: '+ S/ 800.00', date: 'Ayer', positive: true },
-                  { desc: 'Suscripción Netflix', cat: 'Ocio', amount: '- S/ 45.00', date: '15 Mar' },
-                  { desc: 'Pasaje Transporte', cat: 'Transporte', amount: '- S/ 15.00', date: '14 Mar' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-md transition-colors">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-slate-900">{item.desc}</p>
-                      <p className="text-xs text-slate-500">{item.cat}</p>
+                {movimientos.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-4">No hay movimientos registrados</p>
+                ) : (
+                  movimientos.slice(0, 5).map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-md transition-colors">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-slate-900">{item.desc}</p>
+                        <p className="text-xs text-slate-500">{item.cat}</p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <p className={`text-sm font-semibold ${item.type === 'income' ? 'text-emerald-600' : 'text-slate-900'}`}>
+                          {item.type === 'income' ? '+' : '-'} {formatter.format(item.amount)}
+                        </p>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider">{item.date}</p>
+                      </div>
                     </div>
-                    <div className="text-right space-y-1">
-                      <p className={`text-sm font-semibold ${item.positive ? 'text-emerald-600' : 'text-slate-900'}`}>
-                        {item.amount}
-                      </p>
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wider">{item.date}</p>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
-              <Button variant="ghost" className="w-full mt-4 text-slate-500 hover:text-slate-900 text-xs uppercase tracking-widest font-bold">
-                Ver todo el historial
-              </Button>
             </CardContent>
           </Card>
         </div>
