@@ -26,6 +26,14 @@ export default function RegisterPage() {
       return;
     }
 
+    // Si Supabase tiene activada la confirmación de correo, session será null
+    if (!data.session) {
+      alert("¡Cuenta creada! Por favor, revisa tu correo para confirmar tu cuenta antes de iniciar sesión.");
+      router.push('/login');
+      return;
+    }
+
+    // Si llegamos aquí, el usuario ya tiene sesión iniciada automáticamente
     router.push('/onboarding');
   };
 
